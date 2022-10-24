@@ -43,8 +43,8 @@ def cal_f_value(groups) -> float:
 
     f_values = (
             groups.first()["strike"]
-            + groups.first()["mark_price"]
-            - groups.nth(1)["mark_price"]
+            + abs(groups.first()["mark_price"]
+                  - groups.nth(1)["mark_price"])
     )
     return f_values
 
