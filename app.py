@@ -1,5 +1,6 @@
 from datetime import datetime
 import pandas as pd
+from numpy.distutils.system_info import dfftw_info
 
 MINUTES_IN_A_YEAR = 525600  # number of minutes in a year
 
@@ -37,22 +38,22 @@ def cal_t_value():
     pass
 
 
-def cal_f_value(groups) -> float:
-    # print("Call :\n", groups.first())
-    # print("Put :\n", groups.nth(1))
+def cal_f_value(df: pd.DataFrame) -> pd.DataFrame:
+    df["strike_temp"] = df["Strike"]
+    grouped = df.groupby(["Symbol", "Settlement", "Strike"], sort=False)
+    df["F"] = grouped["mark_price"] \
+        .diff().abs() \
+        .fillna(method="bfill") \
+        .add(df["Strike"])
 
-    f_values = (
-            groups.first()["strike"]
-            + abs(groups.first()["mark_price"]
-                  - groups.nth(1)["mark_price"])
-    )
-    return f_values
+    return df
 
 
 # remove illiquid strikes
 def select_strikes(df: pd.DataFrame) -> pd.DataFrame:
     df["min_b/a"] = df.apply(lambda x: min(x.bid1, x.ask1), axis=1)
     df["min_b/a_diff"] = df.groupby(["Symbol", "Settlement", "C/P"], sort=False)[["min_b/a"]].diff()
+    df["K0"] = 'N'
 
     df_call = df[df["C/P"] == "C"]
     df_put = df[df["C/P"] == "P"]
@@ -61,13 +62,15 @@ def select_strikes(df: pd.DataFrame) -> pd.DataFrame:
     df_call = df_call.sort_values(by=["Symbol", "Settlement", "Strike"], ascending=[True, True, False])
     df_call = df_call[df_call.groupby(["Symbol", "Settlement"], sort=False)["min_b/a_diff"].transform(
         lambda x: x.ne(0).cumprod().astype(bool))]
-    print(df_call)
+
+    df_call.loc[df_call.groupby(["Symbol", "Settlement"]).head(1).index, "K0"] = "Y"
+    df_put.loc[df_put.groupby(["Symbol", "Settlement"]).head(1).index, "K0"] = "Y"
+
     df = pd.concat([df_call, df_put], axis=0)
 
-    # remove 0 bid/ask strikes
     df = df[df["min_b/a"] > 0]
+    df.drop(["min_b/a", "min_b/a_diff"], inplace=True, axis=1)
     df.sort_values(["Symbol", "Settlement", "Strike"], ascending=True, inplace=True)
-    print(df)
     return df
 
 
@@ -82,18 +85,16 @@ def main():
     # print("Processed data :\n", df)
 
     df = filter_data(df, date1)
-    print("Selected data by the given date :\n", df)
+    # print("Selected data by the given date :\n", df)
+
+    df = cal_f_value(df)
+    # print("Calculate F value :\n", df)
 
     df = select_strikes(df)
-    # print("df :\n", df)
+    # print("Select Strike by removing low liquidity strikes :\n", df)
 
-    # groups = df.groupby(["Symbol", "Settlement", "C/P"], sort=False)
-    # print("Group :\n")
-    # for key, item in groups:
-    #     print(item)
-
-    df.drop(["min_b/a", "min_b/a_diff"], inplace=True, axis=1)
-    print("df :\n", df)
+    # df = select_K0(df)
+    print(df)
 
 
 if __name__ == "__main__":
